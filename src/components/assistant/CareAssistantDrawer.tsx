@@ -20,6 +20,7 @@ import {
   getVoiceLanguageCapability,
   VOICE_LANGUAGE_MATRIX,
 } from '../../../shared/voiceLanguageMatrix.ts';
+import { buildApiUrl } from '../../config/api.ts';
 import { useCareBridge } from '../../context/CareBridgeContext.tsx';
 import { getAuthenticatedIdToken } from '../../services/firestoreService.ts';
 import {
@@ -308,7 +309,7 @@ export const CareAssistantDrawer: React.FC<{
           .slice(-6)
           .map((item) => ({ role: item.role, text: item.text }));
 
-        const res = await fetch('/api/v1/voice/converse', {
+        const res = await fetch(buildApiUrl('/api/v1/voice/converse'), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -394,7 +395,7 @@ export const CareAssistantDrawer: React.FC<{
       const token = await getAuthenticatedIdToken();
       if (!token) throw new Error('Authentication required.');
 
-      const res = await fetch('/api/v1/voice/execute-action', {
+      const res = await fetch(buildApiUrl('/api/v1/voice/execute-action'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

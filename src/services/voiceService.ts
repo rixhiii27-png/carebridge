@@ -3,6 +3,7 @@ import {
   VOICE_LANGUAGE_MATRIX,
   type VoiceLanguageCapability,
 } from '../../shared/voiceLanguageMatrix.ts';
+import { buildApiUrl } from '../config/api.ts';
 import { getLanguageMeta } from '../i18n/languages.ts';
 import { getAuthenticatedIdToken } from './firestoreService.ts';
 
@@ -216,7 +217,7 @@ export async function fetchServerVoiceCapabilities(
     if (!token) {
       return cachedServerCapabilities;
     }
-    const res = await fetch('/api/v1/voice/capabilities', {
+    const res = await fetch(buildApiUrl('/api/v1/voice/capabilities'), {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) {
@@ -845,7 +846,7 @@ async function requestServerSpeechSynthesis(
     return { audioAvailable: false, reason: 'Sign-in required for backend audio synthesis.' };
   }
 
-  const res = await fetch('/api/v1/voice/synthesize', {
+  const res = await fetch(buildApiUrl('/api/v1/voice/synthesize'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -1386,7 +1387,7 @@ export function startVoiceListening(callbacks: VoiceListeningCallbacks): () => v
             throw new Error('Authentication required for neural speech transcription.');
           }
           const audioBase64 = await blobToBase64(blob);
-          const res = await fetch('/api/v1/voice/transcribe', {
+          const res = await fetch(buildApiUrl('/api/v1/voice/transcribe'), {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',

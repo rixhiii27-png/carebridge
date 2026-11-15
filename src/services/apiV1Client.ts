@@ -1,3 +1,4 @@
+import { buildApiUrl } from '../config/api.ts';
 import { getAuthenticatedIdToken } from './firestoreService.ts';
 
 async function v1Fetch<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -6,7 +7,7 @@ async function v1Fetch<T>(path: string, init: RequestInit = {}): Promise<T> {
     throw new Error('Verified authentication session is required.');
   }
 
-  const res = await fetch(`/api/v1${path}`, {
+  const res = await fetch(buildApiUrl(`/api/v1${path}`), {
     ...init,
     headers: {
       'Content-Type': 'application/json',

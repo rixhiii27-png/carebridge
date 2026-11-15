@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { AlertCircle, Check, Globe, Languages } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { PageHeader } from '../components/common/AccessibleWidgets.tsx';
+import { buildApiUrl } from '../config/api.ts';
 import { useCareBridge } from '../context/CareBridgeContext.tsx';
 import { getLanguageMeta, SUPPORTED_LANGUAGES } from '../i18n/languages.ts';
 import { getAuthenticatedIdToken } from '../services/firestoreService.ts';
@@ -37,7 +38,7 @@ export const LanguageSettingsPage: React.FC = () => {
         setTranslateError('Sign in to test server-side translation.');
         return;
       }
-      const res = await fetch('/api/translate', {
+      const res = await fetch(buildApiUrl('/api/translate'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -2,6 +2,7 @@ import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
 import { serverEnv } from './server/config/env.ts';
+import { createCorsMiddleware } from './server/middleware/cors.ts';
 import { globalErrorHandler } from './server/middleware/errorHandler.ts';
 import { apiRouter } from './server/routes/apiRoutes.ts';
 
@@ -21,6 +22,7 @@ export function createApp() {
     next();
   });
 
+  app.use(createCorsMiddleware());
   app.use(apiRouter);
   app.use(globalErrorHandler);
 
@@ -45,6 +47,14 @@ async function startServer() {
       app.get('*', (_req, res) => {
         res.sendFile(path.join(distDir, 'index.html'));
       });
+    } else {
+      app.get('/', (_req, res) => {
+        res.status(200).json({
+          ok: true,
+          service: 'carebridge-api',
+          health: '/health',
+        });
+      });
     }
   }
 
@@ -63,7 +73,7 @@ async function startServer() {
 const isDirectRun =
   typeof process !== 'undefined' &&
   Array.isArray(process.argv) &&
-  process.argv[1]?.endsWith('server.ts');
+  path.basename(process.argv[1] || '') === 'server.ts';
 
 if (isDirectRun) {
   startServer().catch((err) => {

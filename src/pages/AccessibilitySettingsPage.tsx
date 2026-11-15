@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { VOICE_LANGUAGE_MATRIX } from '../../shared/voiceLanguageMatrix.ts';
 import { PageHeader } from '../components/common/AccessibleWidgets.tsx';
+import { buildApiUrl } from '../config/api.ts';
 import { useCareBridge } from '../context/CareBridgeContext.tsx';
 import { getAuthenticatedIdToken } from '../services/firestoreService.ts';
 import {
@@ -106,7 +107,7 @@ export const AccessibilitySettingsPage: React.FC = () => {
         try {
           const token = await getAuthenticatedIdToken();
           if (!token) throw new Error('Authentication required.');
-          const res = await fetch('/api/v1/voice/converse', {
+          const res = await fetch(buildApiUrl('/api/v1/voice/converse'), {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',

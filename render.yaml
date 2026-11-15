@@ -1,0 +1,43 @@
+services:
+  - type: web
+    name: carebridge-api
+    runtime: node
+    plan: free
+    buildCommand: npm install --legacy-peer-deps
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: EMAIL_TEST_MODE
+        value: "true"
+      - key: APP_URL
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: CORS_ALLOW_VERCEL_PREVIEWS
+        value: "false"
+      - key: VERCEL_PREVIEW_PROJECT_SLUG
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GOOGLE_CLOUD_TTS_API_KEY
+        sync: false
+      - key: SCHEDULER_SECRET
+        sync: false
+      - key: SCHEDULER_OIDC_AUDIENCE
+        sync: false
+      - key: SCHEDULER_OIDC_SERVICE_ACCOUNT
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        value: "CareBridge Alerts <no-reply@carebridge.local>"

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { EmptyStateCard, PageHeader } from '../components/common/AccessibleWidgets.tsx';
+import { buildApiUrl } from '../config/api.ts';
 import { useCareBridge } from '../context/CareBridgeContext.tsx';
 import {
   createInAppNotification,
@@ -166,7 +167,7 @@ export const NotificationsPage: React.FC = () => {
       if (!token) throw new Error('Not signed in');
 
       const dedupeKey = `test_${firebaseUser.uid}_${Date.now()}`;
-      const res = await fetch('/api/notifications/dispatch', {
+      const res = await fetch(buildApiUrl('/api/notifications/dispatch'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
