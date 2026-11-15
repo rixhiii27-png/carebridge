@@ -1,0 +1,332 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Public-safe user profile and localization/accessibility settings (PII isolated in private subcollection).",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "role": { "type": "string", "enum": ["elderly", "family", "caregiver"] },
+        "preferredLanguage": { "type": "string", "minLength": 2, "maxLength": 16 },
+        "preferredScript": { "type": "string", "minLength": 2, "maxLength": 32 },
+        "timezone": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "largeText": { "type": "boolean" },
+        "highContrast": { "type": "boolean" },
+        "largeButtons": { "type": "boolean" },
+        "simpleNavigation": { "type": "boolean" },
+        "reducedMotion": { "type": "boolean" },
+        "voiceEnabled": { "type": "boolean" },
+        "activeGroupId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "role", "preferredLanguage", "timezone", "createdAt", "updatedAt"]
+    },
+    "UserPrivateInfo": {
+      "title": "UserPrivateInfo",
+      "description": "Isolated PII record accessible strictly by the owning user.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "maxLength": 254 },
+        "phone": { "type": "string", "maxLength": 32 },
+        "emergencyContact": { "type": "string", "maxLength": 160 },
+        "address": { "type": "string", "maxLength": 250 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "updatedAt"]
+    },
+    "CareGroup": {
+      "title": "CareGroup",
+      "description": "Shared elderly care profile coordinating medications, appointments, and authorized caregivers.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "elderlyName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "elderlyAge": { "type": "integer" },
+        "bloodGroup": { "type": "string", "maxLength": 16 },
+        "primaryPhysician": { "type": "string", "maxLength": 120 },
+        "primaryClinic": { "type": "string", "maxLength": 160 },
+        "timezone": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "allergies": { "type": "array", "description": "Bounded up to 20 items" },
+        "conditions": { "type": "array", "description": "Bounded up to 20 items" },
+        "memberUids": { "type": "array", "description": "Bounded up to 20 active member UIDs" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerId", "elderlyName", "elderlyAge", "timezone", "memberUids", "createdAt", "updatedAt"]
+    },
+    "CareMember": {
+      "title": "CareMember",
+      "description": "Authorized member entry inside a careGroup subcollection (Master Gate).",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "groupId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "role": { "type": "string", "enum": ["elderly", "family", "caregiver"] },
+        "relationship": { "type": "string", "maxLength": 64 },
+        "inviteCode": { "type": "string", "maxLength": 32 },
+        "canEditMedications": { "type": "boolean" },
+        "canEditAppointments": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["active", "revoked"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "groupId", "displayName", "role", "canEditMedications", "canEditAppointments", "status", "createdAt", "updatedAt"]
+    },
+    "CareMembership": {
+      "title": "CareMembership",
+      "description": "Top-level membership index keyed by groupId_uid for query enforcement.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "groupId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "elderlyName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "role": { "type": "string", "enum": ["elderly", "family", "caregiver"] },
+        "status": { "type": "string", "enum": ["active", "revoked"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "groupId", "elderlyName", "role", "status", "createdAt", "updatedAt"]
+    },
+    "Invitation": {
+      "title": "Invitation",
+      "description": "Single-use expiring invitation token (SHA-256 hashed for server API) for joining a care group.",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "minLength": 8, "maxLength": 32, "pattern": "^[A-Z0-9\\-]+$" },
+        "tokenHash": { "type": "string", "minLength": 64, "maxLength": 64 },
+        "invitedEmail": { "type": "string", "maxLength": 254 },
+        "groupId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "elderlyName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "targetRole": { "type": "string", "enum": ["family", "caregiver"] },
+        "canEditMedications": { "type": "boolean" },
+        "canEditAppointments": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["pending", "redeemed", "revoked"] },
+        "redeemedBy": { "type": "string", "maxLength": 128 },
+        "expiresAtMs": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["code", "groupId", "elderlyName", "createdBy", "targetRole", "canEditMedications", "canEditAppointments", "status", "expiresAtMs", "createdAt", "updatedAt"]
+    },
+    "Medication": {
+      "title": "Medication",
+      "description": "User/caregiver-entered medication schedule and instructions.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "groupId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "memberUids": { "type": "array", "description": "Bounded up to 20 active member UIDs" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "dosage": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "scheduleTimes": { "type": "array", "description": "Up to 8 HH:MM schedule times" },
+        "frequency": { "type": "string", "enum": ["once_daily", "twice_daily", "three_times_daily", "weekly", "as_needed"] },
+        "startDate": { "type": "string", "minLength": 10, "maxLength": 10 },
+        "endDate": { "type": "string", "maxLength": 10 },
+        "instructions": { "type": "string", "maxLength": 500 },
+        "prescriberName": { "type": "string", "maxLength": 120 },
+        "prescriberClinic": { "type": "string", "maxLength": 160 },
+        "active": { "type": "boolean" },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "updatedBy": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "groupId", "memberUids", "name", "dosage", "scheduleTimes", "frequency", "startDate", "active", "createdBy", "updatedBy", "createdAt", "updatedAt"]
+    },
+    "MedicationLog": {
+      "title": "MedicationLog",
+      "description": "Dose confirmation record with explicit actor attribution.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "groupId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "memberUids": { "type": "array", "description": "Bounded up to 20 active member UIDs" },
+        "medicationId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "medicationName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "scheduledDate": { "type": "string", "minLength": 10, "maxLength": 10 },
+        "scheduledTime": { "type": "string", "minLength": 5, "maxLength": 5 },
+        "status": { "type": "string", "enum": ["not_confirmed", "taken", "skipped", "missed"] },
+        "note": { "type": "string", "maxLength": 300 },
+        "updatedByUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "updatedByName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "groupId", "memberUids", "medicationId", "medicationName", "scheduledDate", "scheduledTime", "status", "updatedByUid", "updatedByName", "createdAt", "updatedAt"]
+    },
+    "Appointment": {
+      "title": "Appointment",
+      "description": "Scheduled or historical doctor appointment with timezone and reminder settings.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "groupId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "memberUids": { "type": "array", "description": "Bounded up to 20 active member UIDs" },
+        "doctorName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "specialty": { "type": "string", "maxLength": 80 },
+        "clinicName": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "appointmentDate": { "type": "string", "minLength": 10, "maxLength": 10 },
+        "appointmentTime": { "type": "string", "minLength": 5, "maxLength": 5 },
+        "timezone": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "notes": { "type": "string", "maxLength": 500 },
+        "reminderMinutesBefore": { "type": "integer" },
+        "status": { "type": "string", "enum": ["scheduled", "completed", "cancelled"] },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "updatedBy": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "groupId", "memberUids", "doctorName", "clinicName", "appointmentDate", "appointmentTime", "timezone", "reminderMinutesBefore", "status", "createdBy", "updatedBy", "createdAt", "updatedAt"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "In-app and email reminder delivery record with deduplication key.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "groupId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "recipientUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "type": { "type": "string", "enum": ["upcoming_dose", "unconfirmed_dose", "missed_dose", "upcoming_appointment", "caregiver_update"] },
+        "title": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "message": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "channel": { "type": "string", "enum": ["in_app", "email"] },
+        "deliveryStatus": { "type": "string", "enum": ["pending", "sent", "failed", "skipped_preference"] },
+        "dedupeKey": { "type": "string", "minLength": 1, "maxLength": 180 },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "groupId", "recipientUid", "type", "title", "message", "channel", "deliveryStatus", "dedupeKey", "read", "createdAt", "updatedAt"]
+    },
+    "NotificationPreference": {
+      "title": "NotificationPreference",
+      "description": "Per-user channel and alert preferences.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "inAppEnabled": { "type": "boolean" },
+        "emailEnabled": { "type": "boolean" },
+        "upcomingDoseAlert": { "type": "boolean" },
+        "unconfirmedDoseAlert": { "type": "boolean" },
+        "missedDoseAlert": { "type": "boolean" },
+        "appointmentAlert": { "type": "boolean" },
+        "caregiverUpdateAlert": { "type": "boolean" },
+        "timezone": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "inAppEnabled", "emailEnabled", "upcomingDoseAlert", "unconfirmedDoseAlert", "missedDoseAlert", "appointmentAlert", "caregiverUpdateAlert", "timezone", "updatedAt"]
+    },
+    "ActivityLog": {
+      "title": "ActivityLog",
+      "description": "Immutable audit log of care group actions.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "groupId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "memberUids": { "type": "array", "description": "Bounded up to 20 active member UIDs" },
+        "actorUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "actorName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "actorRole": { "type": "string", "enum": ["elderly", "family", "caregiver"] },
+        "actionType": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "entityType": { "type": "string", "enum": ["medication", "medicationLog", "appointment", "careGroup", "member", "invitation", "notification"] },
+        "entityId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "groupId", "memberUids", "actorUid", "actorName", "actorRole", "actionType", "entityType", "entityId", "summary", "createdAt"]
+    },
+    "NotificationJob": {
+      "title": "NotificationJob",
+      "description": "Server-managed reminder job synced with appointment lifecycle.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "groupId": { "type": "string" },
+        "entityType": { "type": "string" },
+        "entityId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "completed", "cancelled", "failed"] },
+        "attempts": { "type": "integer" }
+      },
+      "required": ["id", "groupId", "entityType", "entityId", "status"]
+    },
+    "NotificationDeliveryLog": {
+      "title": "NotificationDeliveryLog",
+      "description": "Server-managed idempotency and email/in-app delivery audit record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "dedupeKey": { "type": "string" },
+        "groupId": { "type": "string" },
+        "recipientUid": { "type": "string" },
+        "status": { "type": "string", "enum": ["sent", "failed", "skipped_preference", "test_mode"] },
+        "emailMode": { "type": "string", "enum": ["smtp", "test"] },
+        "attempts": { "type": "integer" }
+      },
+      "required": ["id", "dedupeKey", "groupId", "recipientUid", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User non-PII profile, language, and accessibility preferences."
+    },
+    "/users/{userId}/private/{docId}": {
+      "schema": { "$ref": "#/entities/UserPrivateInfo" },
+      "description": "Owner-only PII document containing email, phone, and address."
+    },
+    "/careGroups/{groupId}": {
+      "schema": { "$ref": "#/entities/CareGroup" },
+      "description": "Care group root profile for an elderly resident."
+    },
+    "/careGroups/{groupId}/members/{memberId}": {
+      "schema": { "$ref": "#/entities/CareMember" },
+      "description": "Master Gate subcollection storing active/revoked members and granular permissions."
+    },
+    "/careMemberships/{membershipId}": {
+      "schema": { "$ref": "#/entities/CareMembership" },
+      "description": "Index collection mapping users to their care groups."
+    },
+    "/invitations/{inviteId}": {
+      "schema": { "$ref": "#/entities/Invitation" },
+      "description": "Single-use expiring invitation tokens."
+    },
+    "/medications/{medId}": {
+      "schema": { "$ref": "#/entities/Medication" },
+      "description": "Medications belonging to a care group."
+    },
+    "/medicationLogs/{logId}": {
+      "schema": { "$ref": "#/entities/MedicationLog" },
+      "description": "Dose status confirmations and history."
+    },
+    "/appointments/{apptId}": {
+      "schema": { "$ref": "#/entities/Appointment" },
+      "description": "Doctor appointments for a care group."
+    },
+    "/notifications/{notifId}": {
+      "schema": { "$ref": "#/entities/Notification" },
+      "description": "Recipient-scoped notification feed."
+    },
+    "/notificationPreferences/{userId}": {
+      "schema": { "$ref": "#/entities/NotificationPreference" },
+      "description": "Owner-scoped notification channel preferences."
+    },
+    "/activityLogs/{logId}": {
+      "schema": { "$ref": "#/entities/ActivityLog" },
+      "description": "Immutable care group audit log."
+    },
+    "/notificationJobs/{jobId}": {
+      "schema": { "$ref": "#/entities/NotificationJob" },
+      "description": "Server-only reminder job table (client access denied)."
+    },
+    "/notificationDeliveryLogs/{logId}": {
+      "schema": { "$ref": "#/entities/NotificationDeliveryLog" },
+      "description": "Server-only notification deduplication & delivery log (client access denied)."
+    }
+  }
+}

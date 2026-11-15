@@ -1,0 +1,6 @@
+{
+  "name": "CareBridge",
+  "description": "Connected Elderly Healthcare & Medication Management Platform — Better Care. Stronger Connections. Healthier Living.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

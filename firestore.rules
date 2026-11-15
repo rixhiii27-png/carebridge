@@ -1,0 +1,617 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Pillar 0: Default-deny global safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // Global Hardened Primitives
+    // =========================================================================
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isValidStringList(listVal, maxItems, maxLen) {
+      return listVal is list
+        && listVal.size() <= maxItems
+        && (listVal.size() == 0 || (listVal[0] is string && listVal[0].size() <= maxLen));
+    }
+
+    function isValidNonEmptyStringList(listVal, maxItems, maxLen) {
+      return listVal is list
+        && listVal.size() >= 1
+        && listVal.size() <= maxItems
+        && listVal[0] is string
+        && listVal[0].size() >= 1
+        && listVal[0].size() <= maxLen;
+    }
+
+    function getMember(groupId) {
+      return get(/databases/$(database)/documents/careGroups/$(groupId)/members/$(request.auth.uid)).data;
+    }
+
+    function isActiveMember(groupId) {
+      return isSignedIn()
+        && isValidId(groupId)
+        && exists(/databases/$(database)/documents/careGroups/$(groupId)/members/$(request.auth.uid))
+        && getMember(groupId).status == 'active';
+    }
+
+    function isActiveMemberOrPendingBatchMember(groupId) {
+      return isSignedIn()
+        && isValidId(groupId)
+        && (
+          (exists(/databases/$(database)/documents/careGroups/$(groupId)/members/$(request.auth.uid))
+            && getMember(groupId).status == 'active')
+          || (existsAfter(/databases/$(database)/documents/careGroups/$(groupId)/members/$(request.auth.uid))
+            && getAfter(/databases/$(database)/documents/careGroups/$(groupId)/members/$(request.auth.uid)).data.status == 'active')
+        );
+    }
+
+    function isGroupOwner(groupId) {
+      return isSignedIn()
+        && isValidId(groupId)
+        && exists(/databases/$(database)/documents/careGroups/$(groupId))
+        && get(/databases/$(database)/documents/careGroups/$(groupId)).data.ownerId == request.auth.uid;
+    }
+
+    function canEditMeds(groupId) {
+      return isActiveMember(groupId)
+        && (getMember(groupId).role == 'elderly' || getMember(groupId).canEditMedications == true);
+    }
+
+    function canEditAppts(groupId) {
+      return isActiveMember(groupId)
+        && (getMember(groupId).role == 'elderly' || getMember(groupId).canEditAppointments == true);
+    }
+
+    // =========================================================================
+    // Validation Blueprints (Anti-Update-Gap)
+    // =========================================================================
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['uid', 'displayName', 'role', 'preferredLanguage', 'timezone', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'displayName', 'role', 'preferredLanguage', 'preferredScript', 'timezone', 'largeText', 'highContrast', 'largeButtons', 'simpleNavigation', 'reducedMotion', 'voiceEnabled', 'activeGroupId', 'createdAt', 'updatedAt'])
+        && isValidId(data.uid)
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120
+        && data.role in ['elderly', 'family', 'caregiver']
+        && data.preferredLanguage is string && data.preferredLanguage.size() >= 2 && data.preferredLanguage.size() <= 16
+        && (!('preferredScript' in data) || (data.preferredScript is string && data.preferredScript.size() <= 32))
+        && data.timezone is string && data.timezone.size() >= 1 && data.timezone.size() <= 64
+        && (!('largeText' in data) || data.largeText is bool)
+        && (!('highContrast' in data) || data.highContrast is bool)
+        && (!('largeButtons' in data) || data.largeButtons is bool)
+        && (!('simpleNavigation' in data) || data.simpleNavigation is bool)
+        && (!('reducedMotion' in data) || data.reducedMotion is bool)
+        && (!('voiceEnabled' in data) || data.voiceEnabled is bool)
+        && (!('activeGroupId' in data) || (data.activeGroupId is string && data.activeGroupId.size() <= 128))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidUserPrivateInfo(data) {
+      return data.keys().hasAll(['uid', 'email', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'phone', 'emergencyContact', 'address', 'updatedAt'])
+        && isValidId(data.uid)
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 254
+        && (!('phone' in data) || (data.phone is string && data.phone.size() <= 32))
+        && (!('emergencyContact' in data) || (data.emergencyContact is string && data.emergencyContact.size() <= 160))
+        && (!('address' in data) || (data.address is string && data.address.size() <= 250))
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCareGroup(data) {
+      return data.keys().hasAll(['id', 'ownerId', 'elderlyName', 'elderlyAge', 'timezone', 'memberUids', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'ownerId', 'elderlyName', 'elderlyAge', 'bloodGroup', 'primaryPhysician', 'primaryClinic', 'timezone', 'allergies', 'conditions', 'memberUids', 'createdAt', 'updatedAt'])
+        && isValidId(data.id)
+        && isValidId(data.ownerId)
+        && data.elderlyName is string && data.elderlyName.size() >= 1 && data.elderlyName.size() <= 120
+        && data.elderlyAge is int && data.elderlyAge >= 1 && data.elderlyAge <= 130
+        && (!('bloodGroup' in data) || (data.bloodGroup is string && data.bloodGroup.size() <= 16))
+        && (!('primaryPhysician' in data) || (data.primaryPhysician is string && data.primaryPhysician.size() <= 120))
+        && (!('primaryClinic' in data) || (data.primaryClinic is string && data.primaryClinic.size() <= 160))
+        && data.timezone is string && data.timezone.size() >= 1 && data.timezone.size() <= 64
+        && (!('allergies' in data) || isValidStringList(data.allergies, 20, 80))
+        && (!('conditions' in data) || isValidStringList(data.conditions, 20, 100))
+        && isValidNonEmptyStringList(data.memberUids, 20, 128)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCareMember(data) {
+      return data.keys().hasAll(['uid', 'groupId', 'displayName', 'role', 'canEditMedications', 'canEditAppointments', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'groupId', 'displayName', 'role', 'relationship', 'inviteCode', 'canEditMedications', 'canEditAppointments', 'status', 'createdAt', 'updatedAt'])
+        && isValidId(data.uid)
+        && isValidId(data.groupId)
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120
+        && data.role in ['elderly', 'family', 'caregiver']
+        && (!('relationship' in data) || (data.relationship is string && data.relationship.size() <= 64))
+        && (!('inviteCode' in data) || (data.inviteCode is string && data.inviteCode.size() <= 32))
+        && data.canEditMedications is bool
+        && data.canEditAppointments is bool
+        && data.status in ['active', 'revoked']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCareMembership(data) {
+      return data.keys().hasAll(['uid', 'groupId', 'elderlyName', 'role', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'groupId', 'elderlyName', 'role', 'status', 'createdAt', 'updatedAt'])
+        && isValidId(data.uid)
+        && isValidId(data.groupId)
+        && data.elderlyName is string && data.elderlyName.size() >= 1 && data.elderlyName.size() <= 120
+        && data.role in ['elderly', 'family', 'caregiver']
+        && data.status in ['active', 'revoked']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidInvitation(data) {
+      return data.keys().hasAll(['code', 'groupId', 'elderlyName', 'createdBy', 'targetRole', 'canEditMedications', 'canEditAppointments', 'status', 'expiresAtMs', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['code', 'tokenHash', 'invitedEmail', 'groupId', 'elderlyName', 'createdBy', 'targetRole', 'canEditMedications', 'canEditAppointments', 'status', 'redeemedBy', 'expiresAtMs', 'createdAt', 'updatedAt'])
+        && data.code is string && data.code.size() >= 8 && data.code.size() <= 32 && data.code.matches('^[A-Z0-9\\-]+$')
+        && (!('tokenHash' in data) || (data.tokenHash is string && data.tokenHash.size() == 64))
+        && (!('invitedEmail' in data) || (data.invitedEmail is string && data.invitedEmail.size() <= 254))
+        && isValidId(data.groupId)
+        && data.elderlyName is string && data.elderlyName.size() >= 1 && data.elderlyName.size() <= 120
+        && isValidId(data.createdBy)
+        && data.targetRole in ['family', 'caregiver']
+        && data.canEditMedications is bool
+        && data.canEditAppointments is bool
+        && data.status in ['pending', 'redeemed', 'revoked']
+        && (!('redeemedBy' in data) || (data.redeemedBy is string && data.redeemedBy.size() <= 128))
+        && data.expiresAtMs is int && data.expiresAtMs > 0
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidMedication(data) {
+      return data.keys().hasAll(['id', 'groupId', 'memberUids', 'name', 'dosage', 'scheduleTimes', 'frequency', 'startDate', 'active', 'createdBy', 'updatedBy', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'groupId', 'memberUids', 'name', 'dosage', 'scheduleTimes', 'frequency', 'startDate', 'endDate', 'instructions', 'prescriberName', 'prescriberClinic', 'active', 'createdBy', 'updatedBy', 'createdAt', 'updatedAt'])
+        && isValidId(data.id)
+        && isValidId(data.groupId)
+        && isValidNonEmptyStringList(data.memberUids, 20, 128)
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && data.dosage is string && data.dosage.size() >= 1 && data.dosage.size() <= 80
+        && isValidNonEmptyStringList(data.scheduleTimes, 8, 5)
+        && data.frequency in ['once_daily', 'twice_daily', 'three_times_daily', 'weekly', 'as_needed']
+        && data.startDate is string && data.startDate.size() == 10
+        && (!('endDate' in data) || (data.endDate is string && data.endDate.size() <= 10))
+        && (!('instructions' in data) || (data.instructions is string && data.instructions.size() <= 500))
+        && (!('prescriberName' in data) || (data.prescriberName is string && data.prescriberName.size() <= 120))
+        && (!('prescriberClinic' in data) || (data.prescriberClinic is string && data.prescriberClinic.size() <= 160))
+        && data.active is bool
+        && isValidId(data.createdBy)
+        && isValidId(data.updatedBy)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidMedicationLog(data) {
+      return data.keys().hasAll(['id', 'groupId', 'memberUids', 'medicationId', 'medicationName', 'scheduledDate', 'scheduledTime', 'status', 'updatedByUid', 'updatedByName', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'groupId', 'memberUids', 'medicationId', 'medicationName', 'scheduledDate', 'scheduledTime', 'status', 'note', 'updatedByUid', 'updatedByName', 'createdAt', 'updatedAt'])
+        && isValidId(data.id)
+        && isValidId(data.groupId)
+        && isValidNonEmptyStringList(data.memberUids, 20, 128)
+        && isValidId(data.medicationId)
+        && data.medicationName is string && data.medicationName.size() >= 1 && data.medicationName.size() <= 120
+        && data.scheduledDate is string && data.scheduledDate.size() == 10
+        && data.scheduledTime is string && data.scheduledTime.size() == 5
+        && data.status in ['not_confirmed', 'taken', 'skipped', 'missed']
+        && (!('note' in data) || (data.note is string && data.note.size() <= 300))
+        && isValidId(data.updatedByUid)
+        && data.updatedByName is string && data.updatedByName.size() >= 1 && data.updatedByName.size() <= 120
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAppointment(data) {
+      return data.keys().hasAll(['id', 'groupId', 'memberUids', 'doctorName', 'clinicName', 'appointmentDate', 'appointmentTime', 'timezone', 'reminderMinutesBefore', 'status', 'createdBy', 'updatedBy', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'groupId', 'memberUids', 'doctorName', 'specialty', 'clinicName', 'appointmentDate', 'appointmentTime', 'timezone', 'notes', 'reminderMinutesBefore', 'status', 'createdBy', 'updatedBy', 'createdAt', 'updatedAt'])
+        && isValidId(data.id)
+        && isValidId(data.groupId)
+        && isValidNonEmptyStringList(data.memberUids, 20, 128)
+        && data.doctorName is string && data.doctorName.size() >= 1 && data.doctorName.size() <= 120
+        && (!('specialty' in data) || (data.specialty is string && data.specialty.size() <= 80))
+        && data.clinicName is string && data.clinicName.size() >= 1 && data.clinicName.size() <= 160
+        && data.appointmentDate is string && data.appointmentDate.size() == 10
+        && data.appointmentTime is string && data.appointmentTime.size() == 5
+        && data.timezone is string && data.timezone.size() >= 1 && data.timezone.size() <= 64
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 500))
+        && data.reminderMinutesBefore is int && data.reminderMinutesBefore >= 0 && data.reminderMinutesBefore <= 10080
+        && data.status in ['scheduled', 'completed', 'cancelled']
+        && isValidId(data.createdBy)
+        && isValidId(data.updatedBy)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidNotification(data) {
+      return data.keys().hasAll(['id', 'groupId', 'recipientUid', 'type', 'title', 'message', 'channel', 'deliveryStatus', 'dedupeKey', 'read', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'groupId', 'recipientUid', 'type', 'title', 'message', 'channel', 'deliveryStatus', 'dedupeKey', 'read', 'createdAt', 'updatedAt'])
+        && isValidId(data.id)
+        && isValidId(data.groupId)
+        && isValidId(data.recipientUid)
+        && data.type in ['upcoming_dose', 'unconfirmed_dose', 'missed_dose', 'upcoming_appointment', 'caregiver_update']
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 140
+        && data.message is string && data.message.size() >= 1 && data.message.size() <= 500
+        && data.channel in ['in_app', 'email']
+        && data.deliveryStatus in ['pending', 'sent', 'failed', 'skipped_preference']
+        && data.dedupeKey is string && data.dedupeKey.size() >= 1 && data.dedupeKey.size() <= 180
+        && data.read is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidNotificationPref(data) {
+      return data.keys().hasAll(['uid', 'inAppEnabled', 'emailEnabled', 'upcomingDoseAlert', 'unconfirmedDoseAlert', 'missedDoseAlert', 'appointmentAlert', 'caregiverUpdateAlert', 'timezone', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'inAppEnabled', 'emailEnabled', 'upcomingDoseAlert', 'unconfirmedDoseAlert', 'missedDoseAlert', 'appointmentAlert', 'caregiverUpdateAlert', 'timezone', 'updatedAt'])
+        && isValidId(data.uid)
+        && data.inAppEnabled is bool
+        && data.emailEnabled is bool
+        && data.upcomingDoseAlert is bool
+        && data.unconfirmedDoseAlert is bool
+        && data.missedDoseAlert is bool
+        && data.appointmentAlert is bool
+        && data.caregiverUpdateAlert is bool
+        && data.timezone is string && data.timezone.size() >= 1 && data.timezone.size() <= 64
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidActivityLog(data) {
+      return data.keys().hasAll(['id', 'groupId', 'memberUids', 'actorUid', 'actorName', 'actorRole', 'actionType', 'entityType', 'entityId', 'summary', 'createdAt'])
+        && data.keys().hasOnly(['id', 'groupId', 'memberUids', 'actorUid', 'actorName', 'actorRole', 'actionType', 'entityType', 'entityId', 'summary', 'createdAt'])
+        && isValidId(data.id)
+        && isValidId(data.groupId)
+        && isValidNonEmptyStringList(data.memberUids, 20, 128)
+        && isValidId(data.actorUid)
+        && data.actorName is string && data.actorName.size() >= 1 && data.actorName.size() <= 120
+        && data.actorRole in ['elderly', 'family', 'caregiver']
+        && data.actionType is string && data.actionType.size() >= 1 && data.actionType.size() <= 64
+        && data.entityType in ['medication', 'medicationLog', 'appointment', 'careGroup', 'member', 'invitation', 'notification']
+        && data.entityId is string && data.entityId.size() >= 1 && data.entityId.size() <= 128
+        && data.summary is string && data.summary.size() >= 1 && data.summary.size() <= 300
+        && data.createdAt is timestamp;
+    }
+
+    // =========================================================================
+    // Collection Rules
+    // =========================================================================
+
+    match /users/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow list: if false;
+      allow create: if isVerifiedUser()
+        && isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProfile(incoming())
+        && incoming().uid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProfile(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'role', 'preferredLanguage', 'preferredScript', 'timezone', 'largeText', 'highContrast', 'largeButtons', 'simpleNavigation', 'reducedMotion', 'voiceEnabled', 'activeGroupId', 'updatedAt']);
+      allow delete: if false;
+
+      match /private/{docId} {
+        allow get: if isValidId(userId) && docId == 'info' && isOwner(userId);
+        allow list: if false;
+        allow create, update: if isVerifiedUser()
+          && isValidId(userId)
+          && docId == 'info'
+          && isOwner(userId)
+          && isValidUserPrivateInfo(incoming())
+          && incoming().uid == request.auth.uid
+          && incoming().updatedAt == request.time;
+        allow delete: if false;
+      }
+    }
+
+    match /careGroups/{groupId} {
+      allow get: if isValidId(groupId) && (isActiveMember(groupId) || (isSignedIn() && resource != null && existing().ownerId == request.auth.uid));
+      allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+      allow create: if isVerifiedUser()
+        && isValidId(groupId)
+        && isValidCareGroup(incoming())
+        && incoming().id == groupId
+        && incoming().ownerId == request.auth.uid
+        && request.auth.uid in incoming().memberUids
+        && incoming().memberUids.size() == 1
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(groupId)
+        && isValidCareGroup(incoming())
+        && incoming().id == existing().id
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          (existing().ownerId == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly(['elderlyName', 'elderlyAge', 'bloodGroup', 'primaryPhysician', 'primaryClinic', 'timezone', 'allergies', 'conditions', 'memberUids', 'updatedAt']))
+          || (incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'updatedAt'])
+            && request.auth.uid in incoming().memberUids
+            && !(request.auth.uid in existing().memberUids)
+            && incoming().memberUids.hasAll(existing().memberUids)
+            && incoming().memberUids.size() == existing().memberUids.size() + 1
+            && existsAfter(/databases/$(database)/documents/careGroups/$(groupId)/members/$(request.auth.uid))
+            && getAfter(/databases/$(database)/documents/careGroups/$(groupId)/members/$(request.auth.uid)).data.status == 'active')
+        );
+      allow delete: if false;
+
+      match /members/{memberId} {
+        allow get: if isValidId(groupId) && isValidId(memberId) && (isActiveMember(groupId) || isOwner(memberId) || isGroupOwner(groupId));
+        allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
+        allow create: if isVerifiedUser()
+          && isValidId(groupId)
+          && isValidId(memberId)
+          && isValidCareMember(incoming())
+          && incoming().uid == memberId
+          && incoming().groupId == groupId
+          && incoming().status == 'active'
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && existsAfter(/databases/$(database)/documents/careGroups/$(groupId))
+          && (
+            (memberId == request.auth.uid && getAfter(/databases/$(database)/documents/careGroups/$(groupId)).data.ownerId == request.auth.uid && incoming().canEditMedications == true && incoming().canEditAppointments == true)
+            || isGroupOwner(groupId)
+            || (memberId == request.auth.uid
+              && ('inviteCode' in incoming())
+              && isValidId(incoming().inviteCode)
+              && exists(/databases/$(database)/documents/invitations/$(incoming().inviteCode))
+              && get(/databases/$(database)/documents/invitations/$(incoming().inviteCode)).data.groupId == groupId
+              && get(/databases/$(database)/documents/invitations/$(incoming().inviteCode)).data.status == 'pending'
+              && get(/databases/$(database)/documents/invitations/$(incoming().inviteCode)).data.expiresAtMs > request.time.toMillis()
+              && getAfter(/databases/$(database)/documents/invitations/$(incoming().inviteCode)).data.status == 'redeemed'
+              && getAfter(/databases/$(database)/documents/invitations/$(incoming().inviteCode)).data.redeemedBy == request.auth.uid
+              && incoming().role == get(/databases/$(database)/documents/invitations/$(incoming().inviteCode)).data.targetRole
+              && incoming().canEditMedications == get(/databases/$(database)/documents/invitations/$(incoming().inviteCode)).data.canEditMedications
+              && incoming().canEditAppointments == get(/databases/$(database)/documents/invitations/$(incoming().inviteCode)).data.canEditAppointments)
+          );
+        allow update: if isVerifiedUser()
+          && isValidId(groupId)
+          && isValidId(memberId)
+          && isValidCareMember(incoming())
+          && isGroupOwner(groupId)
+          && incoming().uid == existing().uid
+          && incoming().groupId == existing().groupId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'role', 'relationship', 'canEditMedications', 'canEditAppointments', 'status', 'updatedAt']);
+        allow delete: if false;
+      }
+    }
+
+    match /careMemberships/{membershipId} {
+      allow get: if isValidId(membershipId) && isSignedIn() && (resource == null || existing().uid == request.auth.uid);
+      allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow create: if isVerifiedUser()
+        && isValidId(membershipId)
+        && isValidCareMembership(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && existsAfter(/databases/$(database)/documents/careGroups/$(incoming().groupId))
+        && existsAfter(/databases/$(database)/documents/careGroups/$(incoming().groupId)/members/$(incoming().uid))
+        && getAfter(/databases/$(database)/documents/careGroups/$(incoming().groupId)/members/$(incoming().uid)).data.status == 'active'
+        && incoming().role == getAfter(/databases/$(database)/documents/careGroups/$(incoming().groupId)/members/$(incoming().uid)).data.role
+        && (incoming().uid == request.auth.uid || isGroupOwner(incoming().groupId));
+      allow update: if isVerifiedUser()
+        && isValidId(membershipId)
+        && isValidCareMembership(incoming())
+        && isGroupOwner(existing().groupId)
+        && incoming().uid == existing().uid
+        && incoming().groupId == existing().groupId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['elderlyName', 'role', 'status', 'updatedAt']);
+      allow delete: if false;
+    }
+
+    match /invitations/{inviteId} {
+      allow get: if isValidId(inviteId) && isSignedIn() && (resource == null || existing().createdBy == request.auth.uid || existing().status == 'pending');
+      allow list: if isSignedIn() && resource.data.createdBy == request.auth.uid;
+      allow create: if isVerifiedUser()
+        && isValidId(inviteId)
+        && isValidInvitation(incoming())
+        && incoming().code == inviteId
+        && incoming().createdBy == request.auth.uid
+        && incoming().status == 'pending'
+        && isGroupOwner(incoming().groupId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(inviteId)
+        && isValidInvitation(incoming())
+        && existing().status == 'pending'
+        && incoming().code == existing().code
+        && incoming().groupId == existing().groupId
+        && incoming().createdBy == existing().createdBy
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          (existing().createdBy == request.auth.uid
+            && incoming().status == 'revoked'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
+          || (existing().expiresAtMs > request.time.toMillis()
+            && incoming().status == 'redeemed'
+            && incoming().redeemedBy == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'redeemedBy', 'updatedAt']))
+        );
+      allow delete: if false;
+    }
+
+    match /medications/{medId} {
+      allow get: if isValidId(medId) && resource != null && isActiveMember(existing().groupId);
+      allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+      allow create: if isVerifiedUser()
+        && isValidId(medId)
+        && isValidMedication(incoming())
+        && incoming().id == medId
+        && incoming().createdBy == request.auth.uid
+        && incoming().updatedBy == request.auth.uid
+        && exists(/databases/$(database)/documents/careGroups/$(incoming().groupId))
+        && incoming().memberUids == get(/databases/$(database)/documents/careGroups/$(incoming().groupId)).data.memberUids
+        && canEditMeds(incoming().groupId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(medId)
+        && isValidMedication(incoming())
+        && canEditMeds(existing().groupId)
+        && incoming().id == existing().id
+        && incoming().groupId == existing().groupId
+        && incoming().createdBy == existing().createdBy
+        && incoming().updatedBy == request.auth.uid
+        && incoming().memberUids == get(/databases/$(database)/documents/careGroups/$(existing().groupId)).data.memberUids
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'dosage', 'scheduleTimes', 'frequency', 'startDate', 'endDate', 'instructions', 'prescriberName', 'prescriberClinic', 'active', 'updatedBy', 'updatedAt', 'memberUids']);
+      allow delete: if isVerifiedUser() && isValidId(medId) && canEditMeds(existing().groupId);
+    }
+
+    match /medicationLogs/{logId} {
+      allow get: if isValidId(logId) && isSignedIn() && (resource == null || isActiveMember(existing().groupId));
+      allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+      allow create: if isVerifiedUser()
+        && isValidId(logId)
+        && isValidMedicationLog(incoming())
+        && incoming().id == logId
+        && incoming().updatedByUid == request.auth.uid
+        && exists(/databases/$(database)/documents/medications/$(incoming().medicationId))
+        && get(/databases/$(database)/documents/medications/$(incoming().medicationId)).data.groupId == incoming().groupId
+        && incoming().memberUids == get(/databases/$(database)/documents/careGroups/$(incoming().groupId)).data.memberUids
+        && isActiveMember(incoming().groupId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(logId)
+        && isValidMedicationLog(incoming())
+        && isActiveMember(existing().groupId)
+        && incoming().id == existing().id
+        && incoming().groupId == existing().groupId
+        && incoming().medicationId == existing().medicationId
+        && incoming().updatedByUid == request.auth.uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'note', 'updatedByUid', 'updatedByName', 'updatedAt']);
+      allow delete: if false;
+    }
+
+    match /appointments/{apptId} {
+      allow get: if isValidId(apptId) && resource != null && isActiveMember(existing().groupId);
+      allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+      allow create: if isVerifiedUser()
+        && isValidId(apptId)
+        && isValidAppointment(incoming())
+        && incoming().id == apptId
+        && incoming().createdBy == request.auth.uid
+        && incoming().updatedBy == request.auth.uid
+        && exists(/databases/$(database)/documents/careGroups/$(incoming().groupId))
+        && incoming().memberUids == get(/databases/$(database)/documents/careGroups/$(incoming().groupId)).data.memberUids
+        && canEditAppts(incoming().groupId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(apptId)
+        && isValidAppointment(incoming())
+        && existing().status == 'scheduled'
+        && canEditAppts(existing().groupId)
+        && incoming().id == existing().id
+        && incoming().groupId == existing().groupId
+        && incoming().createdBy == existing().createdBy
+        && incoming().updatedBy == request.auth.uid
+        && incoming().memberUids == get(/databases/$(database)/documents/careGroups/$(existing().groupId)).data.memberUids
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['doctorName', 'specialty', 'clinicName', 'appointmentDate', 'appointmentTime', 'timezone', 'notes', 'reminderMinutesBefore', 'status', 'updatedBy', 'updatedAt', 'memberUids']);
+      allow delete: if false;
+    }
+
+    match /notifications/{notifId} {
+      allow get: if isValidId(notifId) && isSignedIn() && resource != null && existing().recipientUid == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.recipientUid == request.auth.uid;
+      allow create: if isVerifiedUser()
+        && isValidId(notifId)
+        && isValidNotification(incoming())
+        && incoming().id == notifId
+        && isActiveMember(incoming().groupId)
+        && exists(/databases/$(database)/documents/careGroups/$(incoming().groupId))
+        && incoming().recipientUid in get(/databases/$(database)/documents/careGroups/$(incoming().groupId)).data.memberUids
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(notifId)
+        && isValidNotification(incoming())
+        && existing().recipientUid == request.auth.uid
+        && incoming().id == existing().id
+        && incoming().groupId == existing().groupId
+        && incoming().recipientUid == existing().recipientUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['read', 'updatedAt']);
+      allow delete: if false;
+    }
+
+    match /notificationPreferences/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow list: if false;
+      allow create, update: if isVerifiedUser()
+        && isValidId(userId)
+        && isOwner(userId)
+        && isValidNotificationPref(incoming())
+        && incoming().uid == request.auth.uid
+        && incoming().updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    match /activityLogs/{logId} {
+      allow get: if isValidId(logId) && resource != null && isActiveMember(existing().groupId);
+      allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+      allow create: if isVerifiedUser()
+        && isValidId(logId)
+        && isValidActivityLog(incoming())
+        && incoming().id == logId
+        && incoming().actorUid == request.auth.uid
+        && isActiveMemberOrPendingBatchMember(incoming().groupId)
+        && existsAfter(/databases/$(database)/documents/careGroups/$(incoming().groupId))
+        && incoming().memberUids == getAfter(/databases/$(database)/documents/careGroups/$(incoming().groupId)).data.memberUids
+        && incoming().createdAt == request.time;
+      allow update, delete: if false;
+    }
+
+    // Server-managed scheduler & delivery deduplication collections (Admin SDK only)
+    match /notificationJobs/{jobId} {
+      allow read, write: if false;
+    }
+
+    match /notificationDeliveryLogs/{logId} {
+      allow read, write: if false;
+    }
+  }
+}
