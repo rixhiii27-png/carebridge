@@ -5,7 +5,7 @@ WORKDIR /app
 
 # Install dependencies first for Docker layer caching
 COPY package*.json ./
-RUN npm ci
+RUN npm install --legacy-peer-deps
 
 # Copy application source and compile frontend assets
 COPY . .
@@ -19,10 +19,11 @@ ENV PORT=8080
 
 # Copy runtime dependencies, compiled dist/, server source, and Firebase public config
 COPY package*.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+RUN npm install --omit=dev --legacy-peer-deps && npm cache clean --force
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/server ./server
+COPY --from=builder /app/shared ./shared
 COPY --from=builder /app/server.ts ./server.ts
 COPY --from=builder /app/firebase-applet-config.json ./firebase-applet-config.json
 
